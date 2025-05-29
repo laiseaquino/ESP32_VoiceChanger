@@ -186,6 +186,9 @@ static size_t micInput() {
   // get input from browser mic or else esp mic
   size_t bytesRead = (micRem) ? wsBufferLen : espMicInput();
   if (bytesRead && micRem) {
+    if (!sampleBuffer || !wsBuffer) {
+      LOG_WRN("micInput: sampleBuffer or wsBuffer not allocated!");
+    }
     // double buffer browser mic input
     memcpy(sampleBuffer, wsBuffer, bytesRead);
     wsBufferLen = 0;
@@ -197,6 +200,9 @@ static size_t micInput() {
 void browserMicInput(uint8_t* wsMsg, size_t wsMsgLen) {
   // input from browser mic via websocket
   if (micRem && !wsBufferLen) {
+      if (!wsBuffer) {
+      LOG_WRN("browserMicInput: wsBuffer not allocated!");
+    }
     // copy browser mic input into sampleBuffer for amp
     wsBufferLen = wsMsgLen;
     memcpy(wsBuffer, wsMsg, wsMsgLen);
@@ -205,10 +211,16 @@ void browserMicInput(uint8_t* wsMsg, size_t wsMsgLen) {
 
 static void ampOutput(size_t bytesRead = sampleBytes) {
   // output to amplifier, apply required filtering and volume
+  if (!sampleBuffer) {
+    LOG_WRN("ampOutput: sampleBuffer not allocated!");
+  }
   applyFilters();
   if (spkrRem) wsAsyncSendBinary((uint8_t*)sampleBuffer, bytesRead); // browser speaker
   else if (ampUse) I2Sstd.write((uint8_t*)sampleBuffer, bytesRead); // esp amp speaker
   if (!audioBytes) {
+    if (!audioBuffer) {
+      LOG_WRN("ampOutput: audioBuffer not allocated!");
+    }
     // fill audio buffer to send to RTSP
     memcpy(audioBuffer, sampleBuffer, bytesRead);
     audioBytes = bytesRead;
@@ -440,7 +452,11 @@ void prepAudio() {
 
   if (sampleBuffer == NULL) sampleBuffer = (int16_t*)malloc(sampleBytes);
   if (wsBuffer == NULL) wsBuffer = (uint8_t*)malloc(MAX_PAYLOAD_LEN);
-  if (audioBuffer == NULL && psramFound()) audioBuffer = (uint8_t*)ps_malloc(sampleBytes);
+  if (audioBuffer == NULL) {
+    // if psram not available, use malloc, else use ps_malloc
+    if (psramFound()) audioBuffer = (uint8_t*)ps_malloc(sampleBytes);
+    else audioBuffer = (uint8_t*)malloc(sampleBytes);
+  }
 #ifdef ISVC
   if (recAudioBuffer == NULL && psramFound()) recAudioBuffer = (uint8_t*)ps_malloc(psramMax + (sizeof(int16_t) * DMA_BUFF_LEN));
   // VC can still use audio task without esp mic or amp
